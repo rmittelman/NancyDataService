@@ -1,0 +1,8 @@
+{
+  "profiles": {
+    "NancyDataService": {
+      "commandName": "Project",
+      "nativeDebugging": true
+    }
+  }
+}
