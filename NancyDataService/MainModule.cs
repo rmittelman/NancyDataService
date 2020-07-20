@@ -80,7 +80,6 @@ namespace NancyDataService
              */
             #endregion
 
-
             string json;
             DbFlavors dbFlavor;
             DataSourceTypes dsType = DataSourceTypes.table;
