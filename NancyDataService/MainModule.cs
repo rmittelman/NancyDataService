@@ -9,8 +9,6 @@ namespace NancyDataService
 {
     public class MainModule : NancyModule
     {
-
-
         public MainModule()
         {
             #region general instructions
@@ -83,23 +81,26 @@ namespace NancyDataService
             string json;
             DbFlavors dbFlavor;
             DataSourceTypes dsType = DataSourceTypes.table;
+            List<Filter> filters = new List<Filter>();
             string dbColumns = string.Empty;
             string dsName = string.Empty;
             string orderBy = string.Empty;
             string clientIp = string.Empty;
+            string msg = string.Empty;
 
             #region handle missing or invalid path
             Get("/", parms =>
             {
+                msg = $"Missing path in URL: {Request.Url.ToString()}";
                 json = GetJsonHelp(Formatting.Indented);
-                json = DataAccess.InsertJsonProperties(json, Formatting.Indented, "status", "error", "reason", "missing path name");
+                json = DataAccess.InsertJsonProperties(json, Formatting.Indented, "status", "error", "reason", msg);
                 Logger.LogError($"Missing path in URL: {Request.Url.ToString()}", "MainModule Routing");
                 return (Response)json;
             });
             Get("/{parm1}", parms =>
             {
                 var path = Request.Path.Substring(1);
-                var msg = $"Invalid path '{path}' in URL: {Request.Url.ToString()}";
+                msg = $"Invalid path '{path}' in URL: {Request.Url.ToString()}";
                 if (path != "favicon.ico")
                     Logger.LogError(msg, "MainModule Routing");
                 json = GetJsonHelp(Formatting.Indented);
@@ -118,24 +119,26 @@ namespace NancyDataService
             #endregion
 
             #region SELECT instructions
-            // Select from table or stored procedure
-            // Ex: Access request: http://localhost:8080/select/?ip=192.168.1.18&amp;db=Access&amp;table=tblNAMembers&amp;NAID=equal:431
-            //      MySql request: http://localhost:8080/select/?ip=192.168.1.18&amp;db=MySql&amp;procedure=get_members&amp;ID=eq:431
-            // - path must be: select
-            // - must have ?ip=
-            // - must have &amp;db=[Access|Sql|MySql]
-            // - must have &amp;table= or &amp;procedure=
-            //   - note: stored procedures don't work well with Access
-            //   - if table, may have orderby=col[desc][,col[desc] ...] (ignored for stored procedures)
-            //   - if table, may have columns=col,col... (ignored for stored procedures)
-            //     - if columns parameter has column names, those columns will be selected
-            //     - if missing or no column names, all columns will be selected
-            // - filter parameters are optional
-            //    - if table, filter format is : colName=operator:value,...
-            //    - if table, operators are: less, lessorequal, equal, notequal, greaterorequal, greater, contains, notcontains, starts, ends
-            //       - multiple filters imply AND
-            //    - if procedure, filter format is: parameterName=equal:value,...
-            //       - must supply a filter for each stored procedure parameter
+            /* 
+             * Select from table or stored procedure
+             * Ex: Access request: http://localhost:8080/select/?ip=192.168.1.18&amp;db=Access&amp;table=tblNAMembers&amp;NAID=equal:431
+             *      MySql request: http://localhost:8080/select/?ip=192.168.1.18&amp;db=MySql&amp;procedure=get_members&amp;ID=eq:431
+             * - path must be: select
+             * - must have ?ip=
+             * - must have &amp;db=[Access|Sql|MySql]
+             * - must have &amp;table= or &amp;procedure=
+             *   - note: stored procedures don't work well with Access
+             *   - if table, may have orderby=col[desc][,col[desc] ...] (ignored for stored procedures)
+             *   - if table, may have columns=col,col... (ignored for stored procedures)
+             *     - if columns parameter has column names, those columns will be selected
+             *     - if missing or no column names, all columns will be selected
+             * - filter parameters are optional
+             *    - if table, filter format is : colName=operator:value,...
+             *    - if table, operators are: less, lessorequal, equal, notequal, greaterorequal, greater, contains, notcontains, starts, ends
+             *       - multiple filters imply AND
+             *    - if procedure, filter format is: parameterName=equal:value,...
+             *       - must supply a filter for each stored procedure parameter
+             */
             #endregion
 
             Get("select", parms =>
@@ -149,6 +152,7 @@ namespace NancyDataService
                 }
 
                 #region verify valid parameters
+
                 if (!Request.Query.db.HasValue)
                     return (Response)DataAccess.SerializeDictionary(new Dictionary<string, string>
                             { { "status", "fail" }, { "reason", "missing parameter: db=Access|Sql|MySql" } });
@@ -195,6 +199,7 @@ namespace NancyDataService
 
                     dbColumns = dbColumns.Replace(",", ", ");
                 }
+
                 #endregion
 
                 #region verify order by
@@ -210,12 +215,13 @@ namespace NancyDataService
                     orderBy = string.Empty;
                 #endregion
 
+                clientIp = Request.Query.ip.ToString();
                 dbFlavor = (DbFlavors)Enum.Parse(typeof(DbFlavors), Request.Query.db);
                 dsName = dsType == DataSourceTypes.table ? Request.Query.table : Request.Query.procedure;
-                clientIp = Request.Query.ip.ToString();
 
                 #region get list of filters for query
-                var filters = new List<Filter>();
+
+                filters = new List<Filter>();
                 foreach (var parm in Request.Query)
                 {
                     if (parm != "db" & parm != "table" & parm != "procedure" & parm != "orderby" & parm != "ip" & parm != "columns")
@@ -248,6 +254,7 @@ namespace NancyDataService
                         }
                     }
                 }
+
                 #endregion
 
                 isTest = false;
@@ -282,6 +289,114 @@ namespace NancyDataService
                 #endregion
             });
 
+            Get("selectsql", parms =>
+            {
+                Logger.LogInfo($"SELECT SQL requested: {Request.Url.ToString()}", "MainModule.Get(\"selectsql\")");
+                bool isTest = false;
+                if (isTest)
+                {
+                    json = DataAccess.SerializeDictionary(new Dictionary<string, string> { { "status", "testing" }, { "result", "in selectsql" } });
+                    return (Response)json;
+                }
+
+                #region verify valid parameters
+
+                if (!Request.Query.db.HasValue)
+                    return (Response)DataAccess.SerializeDictionary(new Dictionary<string, string>
+                            { { "status", "fail" }, { "reason", "missing parameter: db=Access|Sql|MySql" } });
+
+                bool isOK = Enum.IsDefined(typeof(DbFlavors), Request.Query.db.ToString());
+                if (!isOK)
+                    return (Response)DataAccess.SerializeDictionary(new Dictionary<string, string>
+                            { { "status", "fail" }, { "reason", "invalid parameter: db=Access|Sql|MySql" } });
+
+                if (!Request.Query.ip.HasValue)
+                    return (Response)DataAccess.SerializeDictionary(new Dictionary<string, string>
+                            { { "status", "fail" }, { "reason", "Parameter 'ip' missing, should be ip=<myIpAddress>" } });
+                if (Request.Query.ip == string.Empty)
+                    return (Response)DataAccess.SerializeDictionary(new Dictionary<string, string>
+                            { { "status", "fail" }, { "reason", "Parameter 'ip' has no value, should be ip=<myIpAddress>" } });
+
+                #endregion
+
+                dsType = DataSourceTypes.sql;
+                clientIp = Request.Query.ip.ToString();
+                dbFlavor = (DbFlavors)Enum.Parse(typeof(DbFlavors), Request.Query.db);
+
+                #region get list of filters for query
+                filters = new List<Filter>();
+                foreach (var parm in Request.Query)
+                {
+                    if (parm != "db" & parm != "table" & parm != "procedure" & parm != "orderby" & parm != "ip" & parm != "columns")
+                    {
+                        string[] vals = Request.Query[parm].ToString().Split(":");
+                        if (vals.Length == 2)
+                        {
+                            if (Enum.IsDefined(typeof(FilterTypes), vals[0].ToLower()))
+                            {
+                                filters.Add(new Filter
+                                {
+                                    Field = parm.ToString(),
+                                    Operator = (FilterTypes)Enum.Parse(typeof(FilterTypes), vals[0].ToLower()),
+                                    Value = vals[1]
+                                });
+                            }
+                            else
+                            {
+                                json = DataAccess.SerializeDictionary(new Dictionary<string, string>
+                                    { { "status", "fail" }, { "reason", $"Parameter '{parm.ToString()}': Incorrect Operator, need {DataAccess.opers}" } });
+                                return (Response)json;
+                            }
+                        }
+                        else
+                        {
+                            json = DataAccess.SerializeDictionary(new Dictionary<string, string>
+                                    { { "status", "fail" }, { "reason", $"Bad parameter '{parm.ToString()}': Need Operator(equal,less,greater,etc):Value" } });
+                            return (Response)json;
+                        }
+                    }
+                }
+                #endregion
+
+                // get SQL statement from request body
+                var sql = new StreamReader(Request.Body).ReadToEnd();
+
+                isTest = false;
+                if (isTest)
+                {
+                    if (filters.Count == 0)
+                        json = DataAccess.SerializeDictionary(new Dictionary<string, string> { { "filters", "''" } });
+                    else
+                        json = $"{{\"filters\":{JsonConvert.SerializeObject(filters, Formatting.None)}}}";
+
+                    json = DataAccess.InsertJsonProperties(json, Formatting.Indented, "status", "testing", "dbFlavor", dbFlavor.ToString());
+                    Console.WriteLine(json);
+                    Console.WriteLine("\nPress any key to exit...");
+                    return (Response)json;
+                }
+
+                #region get data
+                using (var dt = DataAccess.GetData(clientIp, dbFlavor, dsType, sql, filters))
+                {
+                    if (dt == null)
+                        json = DataAccess.LastError;
+                    else
+                    {
+                        //Console.WriteLine("Got data table");
+                        var settings = new JsonSerializerSettings() { Formatting = Formatting.Indented };
+                        settings.Converters.Add(new Converters.DataTableConverter());
+                        json = JsonConvert.SerializeObject(dt, settings);
+                    }
+
+                    return (Response)json;
+                }
+                #endregion
+
+                json = "";
+                return (Response)json;
+
+            });
+
             #region INSERT, UPDATE, DELETE instructions
             // Ex: Access request: http://localhost:8080/insert?ip=192.168.1.18&amp;db=Access
             // - path must be: [insert|update|delete]
@@ -299,7 +414,7 @@ namespace NancyDataService
                     return (Response)DataAccess.SerializeDictionary(new Dictionary<string, string>
                             { { "status", "fail" }, { "reason", "Missing parameter: db=Access|Sql|MySql" } });
                 dbFlavor = (DbFlavors)Enum.Parse(typeof(DbFlavors), Request.Query.db);
-                if (!Enum.IsDefined(typeof(NancyDataService.DbFlavors), dbFlavor))
+                if (!Enum.IsDefined(typeof(DbFlavors), dbFlavor))
                     return (Response)DataAccess.SerializeDictionary(new Dictionary<string, string>
                             { { "status", "fail" }, { "reason", "Invalid parameter: db=Access|Sql|MySql" } });
 
@@ -441,26 +556,42 @@ namespace NancyDataService
             }
         }
 
-        /// <summary>
-        /// Inserts KeyValuePairs of string,Object at beginning of Json string.</string>
-        /// </summary>
-        /// <param name="jsonText">Json text to add properties to.</param>
-        /// <param name="formatting">A Newtonsoft.Json.Formatting member. Ex: Formatting.None / Formatting.Indented.</param>
-        /// <param name="propNamesAndVals">Object parameter array of Name, Value, Name, Value... to add.</param>
-        /// <remarks>Parameter array must be even number of segments.</remarks>
-        /// <returns></returns>
-        //public string InsertJsonProperties(string jsonText, Formatting formatting, params object[] propNamesAndVals)
+        //private List<Filter> Collect_Filters(dynamic query)
         //{
-        //    if (propNamesAndVals.Length % 2 != 0)
-        //        return string.Empty;
+        //    var lf = new List<Filter>();
 
-        //    var jObj = JObject.Parse(jsonText);
-        //    for (int i = propNamesAndVals.GetUpperBound(0); i >= 0; i -= 2)
+        //    foreach (var parm in query)
         //    {
-        //        jObj.AddFirst(new JProperty((string)propNamesAndVals[i - 1], propNamesAndVals[i]));
+        //        if (parm != "db" & parm != "table" & parm != "procedure" & parm != "orderby" & parm != "ip" & parm != "columns")
+        //        {
+        //            string[] vals = query[parm].ToString().Split(":");
+        //            if (vals.Length == 2)
+        //            {
+        //                if (Enum.IsDefined(typeof(FilterTypes), vals[0].ToLower()))
+        //                {
+        //                    lf.Add(new Filter
+        //                    {
+        //                        Field = parm.ToString(),
+        //                        Operator = (FilterTypes)Enum.Parse(typeof(FilterTypes), vals[0].ToLower()),
+        //                        Value = vals[1]
+        //                    });
+        //                }
+        //                else
+        //                {
+        //                    var json = DataAccess.SerializeDictionary(new Dictionary<string, string>
+        //                            { { "status", "fail" }, { "reason", $"Parameter '{parm.ToString()}': Incorrect Operator, need {DataAccess.opers}" } });
+        //                    return (Response)json;
+        //                }
+        //            }
+        //            else
+        //            {
+        //                var json = DataAccess.SerializeDictionary(new Dictionary<string, string>
+        //                            { { "status", "fail" }, { "reason", $"Bad parameter '{parm.ToString()}': Need Operator(equal,less,greater,etc):Value" } });
+        //                return (Response)json;
+        //            }
+        //        }
         //    }
-        //    return jObj.ToString(formatting);
+        //    return lf;
         //}
     }
-
 }

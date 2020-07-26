@@ -12,7 +12,7 @@ namespace NancyDataService
 {
     public static class Logger
     {
-        static log4net.ILog _log = null;
+        public static log4net.ILog _log = null;
         public static log4net.ILog Log
         {
             get
@@ -21,7 +21,7 @@ namespace NancyDataService
                 {
                     var logRepository = LogManager.GetRepository(Assembly.GetEntryAssembly());
                     XmlConfigurator.Configure(logRepository, new FileInfo("log4net.config"));
-                    _log = log4net.LogManager.GetLogger(MethodBase.GetCurrentMethod().DeclaringType);
+                    _log = LogManager.GetLogger(MethodBase.GetCurrentMethod().DeclaringType);
                 }
                 return _log;
             }
