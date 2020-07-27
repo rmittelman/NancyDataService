@@ -64,7 +64,8 @@ namespace NancyDataService
 
         static void Main(string[] args)
         {
-            Logger.LogInfo("NancyDataService starting...");
+            string msg = "NancyDataService starting...";
+            Logger.LogInfo(msg);
 
 #if TOPSHELF
 
@@ -75,10 +76,13 @@ namespace NancyDataService
                     s.ConstructUsing(name => new DataService());
                     s.WhenStarted(tc => tc.Start());
                     s.WhenStopped(tc => tc.Stop());
+                    
                 });
+                x.OnException(ex => { Logger.LogError(ex.Message); });
                 x.UseLog4Net("log4net.config");
                 x.RunAsLocalSystem();
                 x.StartAutomatically();
+                x.EnableShutdown();
                 x.EnableServiceRecovery(r => r.RestartService(TimeSpan.FromSeconds(10)));
                 x.SetServiceName("NancyDataService");
             });
@@ -139,12 +143,4 @@ namespace NancyDataService
             }
         }
     }
-    //public class AppBootstrapper : DefaultNancyBootstrapper
-    //{
-    //    public override void Configure(INancyEnvironment environment)
-    //    {
-    //        environment.Tracing(enabled: false, displayErrorTraces: true);
-    //    }
-    //}
-
 }

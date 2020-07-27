@@ -638,8 +638,10 @@ namespace NancyDataService
             var myList = new List<string>();
             if (sqlStatement.Contains("where", StringComparison.CurrentCultureIgnoreCase))
             {
-                var whereConditions = sqlStatement.Substring(sqlStatement.IndexOf("where", StringComparison.CurrentCultureIgnoreCase) + 6).ToLower();
-                var ar = whereConditions.Split(new string[] { "and", "and ", " and", " and ", "or", "or ", " or", " or " }, StringSplitOptions.None);
+                // get array of where conditions, collect each column name
+                var whereConditions = sqlStatement.Substring(sqlStatement.IndexOf("where", StringComparison.CurrentCultureIgnoreCase) + 6);
+                var ar = whereConditions.Split(new string[] { "and", "And", "AND", "or", "Or", "OR" }, StringSplitOptions.RemoveEmptyEntries);
+                
                 foreach (var fieldExpression in ar)
                 {
                     var fieldName = fieldExpression.Split(new string[] { "=", "<", ">", "in", "between" }, StringSplitOptions.None)[0].Trim();
@@ -1101,7 +1103,7 @@ namespace NancyDataService
         }
 
         /// <summary>
-        /// This overload selects data from MySql table or stored procedure.
+        /// This overload selects MySql data from table or stored procedure.
         /// </summary>
         /// <param name="clientIp">IP address of calling client.</param>
         /// <param name="dbFlavor">A <see cref="DbFlavors"/> enumeration member. Ex: Access/Sql/MySql.</param>
@@ -1152,7 +1154,7 @@ namespace NancyDataService
         }
 
         /// <summary>
-        /// This overload selects data from MySql using SQL statement
+        /// This overload selects MySql data using SQL statement
         /// </summary>
         /// <param name="clientIp">IP address of calling client.</param>
         /// <param name="dbFlavor">A <see cref="DbFlavors"/> enumeration member. Ex: Access/Sql/MySql.</param>
@@ -1246,7 +1248,7 @@ namespace NancyDataService
         }
 
         /// <summary>
-        /// Select data from Sql Server using SQL statement
+        /// This overload selects SQL Server data using SQL statement
         /// </summary>
         /// <param name="clientIp">IP address of calling client.</param>
         /// <param name="dbFlavor">A <see cref="DbFlavors"/> enumeration member. Ex: Access/Sql/MySql.</param>
@@ -1450,7 +1452,7 @@ namespace NancyDataService
                 return null;
             }
 
-            if (Valid_Filters(conn, dbFlavor, dataSourceType, sql, filters))
+            if (Valid_Filters(dataSourceType, sql, filters))
             {
                 isTest = false;
                 if (isTest)

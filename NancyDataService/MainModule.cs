@@ -44,7 +44,7 @@ namespace NancyDataService
              * to be filters used to select data. They are converted to Filter objects (see Filter class in DataAccess.cs).
              * they are collected in a List<Filter> so they can be passed into the DataAccess.GetData method.
              * 
-             * To SELECT, create url similar to:
+             * To SELECT from table or stored procedure, create url similar to:
              * http://localhost:8080/select/?ip=192.168.1.18&amp;db=Access&amp;table=tblNAMembers&amp;NAID=equal:431
              * Call select function like this:
              * using (var client = new HttpClient())
@@ -136,7 +136,8 @@ namespace NancyDataService
              *    - if table, filter format is : colName=operator:value,...
              *    - if table, operators are: less, lessorequal, equal, notequal, greaterorequal, greater, contains, notcontains, starts, ends
              *       - multiple filters imply AND
-             *    - if procedure, filter format is: parameterName=equal:value,...
+             *    - if procedure, filter format is: parameterName=value,...
+             *       - you may also use format: parameterName=equal:value,... (operator MUST be "equal")
              *       - must supply a filter for each stored procedure parameter
              */
             #endregion
@@ -193,11 +194,11 @@ namespace NancyDataService
                 if (Request.Query.columns.HasValue)
                 {
                     dbColumns = Request.Query.columns.ToString();
-                    if (dbColumns == string.Empty)
+                    if (string.IsNullOrEmpty(dbColumns))
                         return (Response)DataAccess.SerializeDictionary(new Dictionary<string, string>
                                 { { "status", "fail" }, { "reason", "Parameter 'columns' must have column names: colName,colName..." } });
 
-                    dbColumns = dbColumns.Replace(",", ", ");
+                    dbColumns = dbColumns.Replace(",", ", ", StringComparison.CurrentCultureIgnoreCase);
                 }
 
                 #endregion
@@ -226,16 +227,29 @@ namespace NancyDataService
                 {
                     if (parm != "db" & parm != "table" & parm != "procedure" & parm != "orderby" & parm != "ip" & parm != "columns")
                     {
-                        //string temp = Request.Query[parm];
+                        // convert parm code (Ex: "greater:25") to array (Ex: [greater, 25])
                         string[] vals = Request.Query[parm].ToString().Split(":");
-                        if (vals.Length == 2)
+
+                        // if no operator (array has 1 segment), use "equal" for the operator and value provided
+                        if (vals.Length == 1)
                         {
-                            if (Enum.IsDefined(typeof(FilterTypes), vals[0].ToLower()))
+                            filters.Add(new Filter
+                            {
+                                Field = parm.ToString(),
+                                Operator = (FilterTypes)Enum.Parse(typeof(FilterTypes), "equal"),
+                                Value = vals[0]
+                            }); ;
+                        }
+                        
+                        // if operator (array has 2 segments), use operator and value provided
+                        else if (vals.Length == 2)
+                        {
+                            if (Enum.IsDefined(typeof(FilterTypes), vals[0].ToLower(System.Globalization.CultureInfo.CurrentCulture)))
                             {
                                 filters.Add(new Filter
                                 {
                                     Field = parm.ToString(),
-                                    Operator = (FilterTypes)Enum.Parse(typeof(FilterTypes), vals[0].ToLower()),
+                                    Operator = (FilterTypes)Enum.Parse(typeof(FilterTypes), vals[0].ToLower(System.Globalization.CultureInfo.CurrentCulture)),
                                     Value = vals[1]
                                 });
                             }
@@ -246,6 +260,8 @@ namespace NancyDataService
                                 return (Response)json;
                             }
                         }
+                        
+                        // if array has other than 1 or 2 segments, note error and exit
                         else
                         {
                             json = DataAccess.SerializeDictionary(new Dictionary<string, string>
@@ -289,9 +305,25 @@ namespace NancyDataService
                 #endregion
             });
 
-            Get("selectsql", parms =>
+            #region SQLSELECT instructions
+            /* 
+             * Select data using a SQL command
+             * Ex: Access request: http://localhost:8080/sqlselect/?ip=192.168.1.18&amp;db=Access&amp;NAID=equal:431
+             *      MySql request: http://localhost:8080/sqlselect/?ip=192.168.1.18&amp;db=MySql&amp;StudentID=equal:43
+             * - path must be: sqlselect
+             * - must have ?ip=
+             * - must have &amp;db=[Access|Sql|MySql]
+             * - SQL statement MUST begin with "select" (case-insensitive)
+             * - must include filter parameters if SQL statement has a WHERE clause
+             *   - must have a parameter for each WHERE clause column
+             *   - filter format is: parameterName=value,...
+             *   - you may also use format: parameterName=equal:value,... (operator MUST be "equal")
+             */
+            #endregion
+
+            Post("sqlselect", parms =>
             {
-                Logger.LogInfo($"SELECT SQL requested: {Request.Url.ToString()}", "MainModule.Get(\"selectsql\")");
+                Logger.LogInfo($"SQL SELECT requested: {Request.Url.ToString()}", "MainModule.Get(\"selectsql\")");
                 bool isTest = false;
                 if (isTest)
                 {
@@ -360,6 +392,9 @@ namespace NancyDataService
 
                 // get SQL statement from request body
                 var sql = new StreamReader(Request.Body).ReadToEnd();
+                if (!sql.StartsWith("select", StringComparison.CurrentCultureIgnoreCase))
+                    return (Response)DataAccess.SerializeDictionary(new Dictionary<string, string>
+                            { { "status", "fail" }, { "reason", $"invalid SQL statement: {sql}" } });
 
                 isTest = false;
                 if (isTest)
@@ -522,19 +557,22 @@ namespace NancyDataService
             var jsonText = DataAccess.SerializeDictionary(new Dictionary<string, string> {
                 { "HELP", "Building HTTP requests" },
                 { " SELECT", "http://localhost:8080/select/ip=#.#.#.#&amp;db=Access (or MySql or Sql)" },
-                { "  - requires", "&amp;table=TableName | &amp;procedure=ProcedureName"},
+                { "  - SELECT requires", "&amp;table=TableName | &amp;procedure=ProcedureName"},
                 { "  - option: ORDER BY (table only)", "&amp;orderby=colName[ desc],colName[ desc]..." },
                 { "  - option: COLUMNS  (table only)", "&amp;columns=colName, colName... (if missing, selects all columns)" },
                 { "  - option: FILTERS (for table)", "&amp;colName=<operator>:value,..." },
-                { "     - operators (table)", "less/lessorEqual/equal/notequal/greaterorequal/greater/contains/notcontains/starts/ends" },
-                { "  - option: FILTERS (for stored procedure)", "&amp;parameterName=equal:value,..."},
-                { "     - operators (stored procedure)", "must only use 'equal' operator." },
+                { "     - operators (for table only)", "less/lessorEqual/equal/notequal/greaterorequal/greater/contains/notcontains/starts/ends" },
+                { "  - option: FILTERS (for stored procedure)", "&amp;parameterName=value,..."},
+                { "     - FILTER operators", "don't use operator for stored procedure, only parameterName=value." },
                 { "     - filter values", "Values only, no quotes or apostrophes for strings or dates" },
                 { "  - FILTER notes", "Multiple filters imply AND. No OR filtering allowed." },
+                { " SQL SELECT", "http://localhost:8080/sqlselect/ip=#.#.#.#&amp;db=Access (or MySql or Sql)" },
+                { "  - SQL SELECT requires", "SQL statement sent as payload of request"},
+                { "  - SQL SELECT note", "SQL statement MUST begin with \"select\" (case-insensitive)" },
                 { " INSERT", "http://localhost:8080/insert/ip=#.#.#.#&amp;db=Access (or MySql or Sql)" },
                 { " UPDATE", "http://localhost:8080/update/ip=#.#.#.#&amp;db=Access (or MySql or Sql)" },
                 { " DELETE", "http://localhost:8080/delete/ip=#.#.#.#&amp;db=Access (or MySql or Sql)" },
-                { "  - note", "these require a serialized 1-record DataTable as payload containing the record to be inserted, updated or deleted." }
+                { "  - DELETE note", "these require a serialized 1-record DataTable as payload containing the record to be inserted, updated or deleted." }
                 }, formatting);
             return jsonText;
         }
