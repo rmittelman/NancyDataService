@@ -82,11 +82,13 @@ namespace NancyDataService
             DbFlavors dbFlavor;
             DataSourceTypes dsType = DataSourceTypes.table;
             List<Filter> filters = new List<Filter>();
+            List<string> errors = new List<string>();
             string dbColumns = string.Empty;
             string dsName = string.Empty;
             string orderBy = string.Empty;
             string clientIp = string.Empty;
             string msg = string.Empty;
+            bool isOK;
 
             #region handle missing or invalid path
             Get("/", parms =>
@@ -158,7 +160,7 @@ namespace NancyDataService
                     return (Response)DataAccess.SerializeDictionary(new Dictionary<string, string>
                             { { "status", "fail" }, { "reason", "missing parameter: db=Access|Sql|MySql" } });
 
-                bool isOK = Enum.IsDefined(typeof(DbFlavors), Request.Query.db.ToString());
+                isOK = Enum.IsDefined(typeof(DbFlavors), Request.Query.db.ToString());
                 if (!isOK)
                     return (Response)DataAccess.SerializeDictionary(new Dictionary<string, string>
                             { { "status", "fail" }, { "reason", "invalid parameter: db=Access|Sql|MySql" } });
@@ -201,9 +203,6 @@ namespace NancyDataService
                     dbColumns = dbColumns.Replace(",", ", ", StringComparison.CurrentCultureIgnoreCase);
                 }
 
-                #endregion
-
-                #region verify order by
                 if (Request.Query.orderby.HasValue)
                 {
                     if (Request.Query.orderby == string.Empty)
@@ -214,6 +213,7 @@ namespace NancyDataService
                 }
                 else
                     orderBy = string.Empty;
+                
                 #endregion
 
                 clientIp = Request.Query.ip.ToString();
@@ -223,52 +223,13 @@ namespace NancyDataService
                 #region get list of filters for query
 
                 filters = new List<Filter>();
-                foreach (var parm in Request.Query)
+                errors = new List<string>();
+                isOK = Collect_Filters(out filters, out errors);
+                if (!isOK)
                 {
-                    if (parm != "db" & parm != "table" & parm != "procedure" & parm != "orderby" & parm != "ip" & parm != "columns")
-                    {
-                        // convert parm code (Ex: "greater:25") to array (Ex: [greater, 25])
-                        string[] vals = Request.Query[parm].ToString().Split(":");
-
-                        // if no operator (array has 1 segment), use "equal" for the operator and value provided
-                        if (vals.Length == 1)
-                        {
-                            filters.Add(new Filter
-                            {
-                                Field = parm.ToString(),
-                                Operator = (FilterTypes)Enum.Parse(typeof(FilterTypes), "equal"),
-                                Value = vals[0]
-                            }); ;
-                        }
-                        
-                        // if operator (array has 2 segments), use operator and value provided
-                        else if (vals.Length == 2)
-                        {
-                            if (Enum.IsDefined(typeof(FilterTypes), vals[0].ToLower(System.Globalization.CultureInfo.CurrentCulture)))
-                            {
-                                filters.Add(new Filter
-                                {
-                                    Field = parm.ToString(),
-                                    Operator = (FilterTypes)Enum.Parse(typeof(FilterTypes), vals[0].ToLower(System.Globalization.CultureInfo.CurrentCulture)),
-                                    Value = vals[1]
-                                });
-                            }
-                            else
-                            {
-                                json = DataAccess.SerializeDictionary(new Dictionary<string, string>
-                                    { { "status", "fail" }, { "reason", $"Parameter '{parm.ToString()}': Incorrect Operator, need {DataAccess.opers}" } });
-                                return (Response)json;
-                            }
-                        }
-                        
-                        // if array has other than 1 or 2 segments, note error and exit
-                        else
-                        {
-                            json = DataAccess.SerializeDictionary(new Dictionary<string, string>
-                                    { { "status", "fail" }, { "reason", $"Bad parameter '{parm.ToString()}': Need Operator(equal,less,greater,etc):Value" } });
-                            return (Response)json;
-                        }
-                    }
+                    json = $"{{\"errors\":{JsonConvert.SerializeObject(errors)}}}";
+                    json = DataAccess.InsertJsonProperties(json, Formatting.None, "status", "error", "method", "MainModule Get(\"select\")");
+                    return (Response)json;
                 }
 
                 #endregion
@@ -356,43 +317,22 @@ namespace NancyDataService
                 dbFlavor = (DbFlavors)Enum.Parse(typeof(DbFlavors), Request.Query.db);
 
                 #region get list of filters for query
+
                 filters = new List<Filter>();
-                foreach (var parm in Request.Query)
+                errors = new List<string>();
+                isOK = Collect_Filters(out filters, out errors);
+                if (!isOK)
                 {
-                    if (parm != "db" & parm != "table" & parm != "procedure" & parm != "orderby" & parm != "ip" & parm != "columns")
-                    {
-                        string[] vals = Request.Query[parm].ToString().Split(":");
-                        if (vals.Length == 2)
-                        {
-                            if (Enum.IsDefined(typeof(FilterTypes), vals[0].ToLower()))
-                            {
-                                filters.Add(new Filter
-                                {
-                                    Field = parm.ToString(),
-                                    Operator = (FilterTypes)Enum.Parse(typeof(FilterTypes), vals[0].ToLower()),
-                                    Value = vals[1]
-                                });
-                            }
-                            else
-                            {
-                                json = DataAccess.SerializeDictionary(new Dictionary<string, string>
-                                    { { "status", "fail" }, { "reason", $"Parameter '{parm.ToString()}': Incorrect Operator, need {DataAccess.opers}" } });
-                                return (Response)json;
-                            }
-                        }
-                        else
-                        {
-                            json = DataAccess.SerializeDictionary(new Dictionary<string, string>
-                                    { { "status", "fail" }, { "reason", $"Bad parameter '{parm.ToString()}': Need Operator(equal,less,greater,etc):Value" } });
-                            return (Response)json;
-                        }
-                    }
+                    json = $"{{\"errors\":{JsonConvert.SerializeObject(errors)}}}";
+                    json = DataAccess.InsertJsonProperties(json, Formatting.None, "status", "error", "method", "MainModule Get(\"sqlselect\")");
+                    return (Response)json;
                 }
+
                 #endregion
 
                 // get SQL statement from request body
                 var sql = new StreamReader(Request.Body).ReadToEnd();
-                if (!sql.StartsWith("select", StringComparison.CurrentCultureIgnoreCase))
+                if (!sql.StartsWith("select ", StringComparison.CurrentCultureIgnoreCase))
                     return (Response)DataAccess.SerializeDictionary(new Dictionary<string, string>
                             { { "status", "fail" }, { "reason", $"invalid SQL statement: {sql}" } });
 
@@ -592,6 +532,59 @@ namespace NancyDataService
             {
                 return null;
             }
+        }
+
+        private bool Collect_Filters(out List<Filter> filters, out List<string> errors)
+        {
+            filters = new List<Filter>();
+            errors = new List<string>();
+            bool isOK = true;
+            foreach (var parm in Request.Query)
+            {
+                if (parm != "db" & parm != "table" & parm != "procedure" & parm != "orderby" & parm != "ip" & parm != "columns")
+                {
+                    // convert parm code (Ex: "greater:25") to array (Ex: [greater, 25])
+                    string[] vals = Request.Query[parm].ToString().Split(":");
+
+                    // if no operator (array has 1 segment), use "equal" for the operator and value provided
+                    if (vals.Length == 1)
+                    {
+                        filters.Add(new Filter
+                        {
+                            Field = parm.ToString(),
+                            Operator = (FilterTypes)Enum.Parse(typeof(FilterTypes), "equal"),
+                            Value = vals[0]
+                        }); ;
+                    }
+
+                    // if operator (array has 2 segments), use operator and value provided
+                    else if (vals.Length == 2)
+                    {
+                        if (Enum.IsDefined(typeof(FilterTypes), vals[0].ToLower(System.Globalization.CultureInfo.CurrentCulture)))
+                        {
+                            filters.Add(new Filter
+                            {
+                                Field = parm.ToString(),
+                                Operator = (FilterTypes)Enum.Parse(typeof(FilterTypes), vals[0].ToLower(System.Globalization.CultureInfo.CurrentCulture)),
+                                Value = vals[1]
+                            });
+                        }
+                        else
+                        {
+                            errors.Add($"Parameter '{parm.ToString()}': Incorrect Operator, need {DataAccess.opers}");
+                            isOK = false;
+                        }
+                    }
+
+                    // if array has other than 1 or 2 segments, note error and exit
+                    else
+                    {
+                        errors.Add($"Bad parameter '{parm.ToString()}': Need 'ParmName=value' or ParmName=operator:value");
+                        isOK = false;
+                    }
+                }
+            }
+            return isOK;
         }
 
         //private List<Filter> Collect_Filters(dynamic query)

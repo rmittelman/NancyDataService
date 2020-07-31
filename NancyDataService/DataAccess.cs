@@ -493,10 +493,12 @@ namespace NancyDataService
                     }
                     else
                     {
-                        if (dataSourceType == DataSourceTypes.table)
-                            cmdText = $"select column_name from information_schema.columns where table_schema = '{dbName}' and table_name = '{dataSourceName}'";
+                        var catalog = dataSourceType == DataSourceTypes.table ? "table_catalog" : "specific_catalog";
+                        var schema = dataSourceType == DataSourceTypes.table ? "table_schema" : "specific_schema";
+                        if (dbFlavor == DbFlavors.Sql)
+                            cmdText = $"select column_name from information_schema.columns where {catalog} = '{dbName}' and table_name = '{dataSourceName}'";
                         else
-                            cmdText = $"select parameter_name from information_schema.parameters where specific_schema = '{dbName}' and specific_name = '{dataSourceName}'";
+                            cmdText = $"select column_name from information_schema.columns where {schema} = '{dbName}' and table_name = '{dataSourceName}'";
 
                         cmd.CommandText = cmdText;
                         cmd.CommandType = CommandType.Text;
@@ -510,13 +512,15 @@ namespace NancyDataService
                             }
                         }
                     }
-                    return myList;
                 }
+                return myList;
             }
             catch (Exception ex)
             {
                 LastError = SerializeDictionary(new Dictionary<string, string>
-                            { { "status", "error" }, { "method", "Get_Parameters_Or_Columns" }, { "Error: ", ex.Message } });
+                            { { "status", "error" }, { "method", "Get_Parameters_Or_Columns" }, { "Error: ", ex.Message
+    }
+});
                 return null;
             }
         }
@@ -590,6 +594,7 @@ namespace NancyDataService
         /// Return a value from a string based on key supplied.
         /// </summary>
         /// <param name="delimitedString">Delimited string to parse. Ex: Item1=one;Item2=two...</param>
+        /// <param name="keyValue">Key to look for in delimitedString</param>
         /// <param name="delimiter">Character separating segments in string</param>
         /// <param name="separator">Character separating key and value in string segments</param>
         /// <returns></returns>
@@ -599,7 +604,7 @@ namespace NancyDataService
             foreach (var item in items)
             {
                 var keyValuePair = item.Split(separator, StringSplitOptions.RemoveEmptyEntries);
-                if (keyValuePair[0] == keyValue)
+                if (keyValuePair[0].ToLower(System.Globalization.CultureInfo.CurrentCulture) == keyValue.ToLower(System.Globalization.CultureInfo.CurrentCulture))
                     return keyValuePair[1];
             }
             return string.Empty;
@@ -641,7 +646,7 @@ namespace NancyDataService
                 // get array of where conditions, collect each column name
                 var whereConditions = sqlStatement.Substring(sqlStatement.IndexOf("where", StringComparison.CurrentCultureIgnoreCase) + 6);
                 var ar = whereConditions.Split(new string[] { "and", "And", "AND", "or", "Or", "OR" }, StringSplitOptions.RemoveEmptyEntries);
-                
+
                 foreach (var fieldExpression in ar)
                 {
                     var fieldName = fieldExpression.Split(new string[] { "=", "<", ">", "in", "between" }, StringSplitOptions.None)[0].Trim();
