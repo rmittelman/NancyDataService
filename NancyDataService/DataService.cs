@@ -11,7 +11,7 @@ using Topshelf.Runtime;
 
 namespace NancyDataService
 {
-    class DataService
+    class DataService : IDisposable
     {
 
         public DataService()
@@ -32,10 +32,10 @@ namespace NancyDataService
             var hostConfig = new HostConfiguration();
             hostConfig.UrlReservations.CreateAutomatically = true;
             hostConfig.RewriteLocalhost = false;
-            nancyHost = new NancyHost(uri, new AppBootstrapper(), hostConfig);
 
             try
             {
+                nancyHost = new NancyHost(uri, new AppBootstrapper(), hostConfig);
                 nancyHost.Start();
                 msg = $"Nancy now listening on {uri}...";
                 Console.WriteLine(msg);
@@ -104,6 +104,11 @@ namespace NancyDataService
             {
                 nancyHost.Dispose();
             }
+        }
+
+        public void Dispose()
+        {
+            throw new NotImplementedException();
         }
     }
     

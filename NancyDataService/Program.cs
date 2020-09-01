@@ -58,6 +58,7 @@ namespace NancyDataService
 {
     class Program
     {
+
         // moved this to Logger class.
         //public static readonly ILog log = LogManager.GetLogger(MethodBase.GetCurrentMethod().DeclaringType);
 
@@ -83,9 +84,18 @@ namespace NancyDataService
                 x.RunAsLocalSystem();
                 x.StartAutomatically();
                 x.EnableShutdown();
-                x.EnableServiceRecovery(r => r.RestartService(TimeSpan.FromSeconds(10)));
+                //x.EnableServiceRecovery(r => r.RestartService(TimeSpan.FromSeconds(10)));
                 x.SetServiceName("NancyDataService");
             });
+
+            if (System.Diagnostics.Debugger.IsAttached)
+            {
+                if (rc == TopshelfExitCode.ServiceAlreadyRunning)
+                {
+                    Console.Write("\nPress any key to exit...");
+                    Console.ReadKey();
+                }
+            }
             var exitCode = (int)Convert.ChangeType(rc, rc.GetTypeCode());  //11
             Environment.ExitCode = exitCode;
 
